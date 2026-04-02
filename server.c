@@ -103,6 +103,14 @@ void *the_clients(void *arg) {
 
         printf("Client (decrypted): %s\n", decrypted);
         SSL_write(ssl, "Secure message is received", strlen("Secure message is received"));
+
+        // Encrypt server response before sending
+        unsigned char response[] = "Secure message is received";
+        unsigned char encrypted_resp[BUFFER_SIZE];
+        int resp_len = encrypt(response, strlen((char*)response), encrypted_resp);
+
+        SSL_write(ssl, encrypted_resp, resp_len);
+
     }
 
     //The Cleanup to prevent leakage

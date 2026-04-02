@@ -33,6 +33,25 @@ int encrypt(unsigned char *plaintext, int plaintext_len,
     return ciphertext_len;
 }
 
+// Decrypt function
+int decrypt(unsigned char *ciphertext, int ciphertext_len,
+            unsigned char *plaintext) {
+    EVP_CIPHER_CTX *ctx;
+    int len, plaintext_len;
+
+    ctx = EVP_CIPHER_CTX_new();
+    EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv);
+
+    EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len);
+    plaintext_len = len;
+
+    EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
+    plaintext_len += len;
+
+    EVP_CIPHER_CTX_free(ctx);
+    return plaintext_len;
+}
+
 int main() {
     int sock;
     struct sockaddr_in server_address;
@@ -112,12 +131,15 @@ int main() {
         //Send encrypted message
         SSL_write(ssl, encrypted, ciphertext_len);
 
-        //Receive the server response
-        SSL_read(ssl, buffer, sizeof(buffer));
-        printf("Server: %s\n", buffer);
+        //Receive the server's encrypted response
+         int bytes = SSL_read(ssl, buffer, sizeof(buffer));
+        if (bytes > 0) {
+            unsigned char decrypted_resp[BUFFER_SIZE];
+            int dec_len = decrypt((unsigned char*)buffer, bytes, decrypted_resp);
+            decrypted_resp[dec_len] = '\0';
+            printf("Server (encrypted): %s\n", decrypted_resp);
+        }
     }
-
-
     //Cleanup
     SSL_shutdown(ssl);
     SSL_free(ssl);
