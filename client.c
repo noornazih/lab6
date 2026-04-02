@@ -48,10 +48,38 @@ int main() {
     } else {
         printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
 
-        // Secure communication
+        // Receive prompt for username
+        SSL_read(ssl, buffer, sizeof(buffer));
+        printf("Server: %s\n", buffer);
+        char username[BUFFER_SIZE];
+        printf("Enter username: ");
+        scanf("%s", username);
+        SSL_write(ssl, username, strlen(username));
+
+        // Receive prompt for password
+        SSL_read(ssl, buffer, sizeof(buffer));
+        printf("Server: %s\n", buffer);
+        char password[BUFFER_SIZE];
+        printf("Enter password: ");
+        scanf("%s", password);
+        SSL_write(ssl, password, strlen(password));
+
+        // Read authentication result
+        SSL_read(ssl, buffer, sizeof(buffer));
+        printf("Server: %s\n", buffer);
+
+        // If access denied, exit immediately
+        if (strcmp(buffer, "Access denied") == 0) {
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+            close(sock);
+            return 0;
+        }
+
+        // Otherwise continue secure communication
         char *msg = "Hello secure server";
         SSL_write(ssl, msg, strlen(msg));
-
         SSL_read(ssl, buffer, sizeof(buffer));
         printf("Server: %s\n", buffer);
     }

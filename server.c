@@ -56,7 +56,7 @@ int main() {
     // Create SSL context and load certificate/key
     SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
     if (!SSL_CTX_use_certificate_file(ctx, "server.cert", SSL_FILETYPE_PEM) ||
-        !SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM)) {   // load server certificate and the private key
+        !SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM)) {
         ERR_print_errors_fp(stderr);
         exit(EXIT_FAILURE);
     }
@@ -71,11 +71,44 @@ int main() {
     } else {
         printf("TLS handshake successful. Using %s\n", SSL_get_cipher(ssl));
 
-        // Secure communication
+        // Ask for username
+        SSL_write(ssl, "Enter username:", strlen("Enter username:"));
         SSL_read(ssl, buffer, sizeof(buffer));
-        printf("Client: %s\n", buffer);
+        char username[BUFFER_SIZE];
+        strcpy(username, buffer);
 
-        SSL_write(ssl, "Hello secure client!", strlen("Hello secure client!"));
+        // Ask for password
+        SSL_write(ssl, "Enter password:", strlen("Enter password:"));
+        SSL_read(ssl, buffer, sizeof(buffer));
+        char password[BUFFER_SIZE];
+        strcpy(password, buffer);
+
+        // Check credentials against users.txt
+        FILE *fp = fopen("users.txt", "r");
+        int authenticated = 0;
+        if (fp != NULL) {
+            char file_user[BUFFER_SIZE], file_pass[BUFFER_SIZE];
+            while (fscanf(fp, "%s %s", file_user, file_pass) != EOF) {
+                if (strcmp(username, file_user) == 0 && strcmp(password, file_pass) == 0) {
+                    authenticated = 1;
+                    break;
+                }
+            }
+            fclose(fp);
+        }
+
+        // Respond based on authentication status
+        if (authenticated) {
+            SSL_write(ssl, "Access granted", strlen("Access granted"));
+        } else {
+            SSL_write(ssl, "Access denied", strlen("Access denied"));
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+            close(new_socket);
+            close(server_fd);
+            return 0;
+        }
     }
 
     // Cleanup
