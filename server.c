@@ -15,30 +15,30 @@ int main() {
     int addrlen = sizeof(address);
     char buffer[BUFFER_SIZE] = {0};
 
-    // Initialize OpenSSL
+    //Initialize OpenSSL
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
 
-    // Create socket
+    //Create socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == 0) {
         perror("Socket failed");
         exit(EXIT_FAILURE);
     }
 
-    // Define server address
+    //Define the server address
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
-    // Bind the socket
+    //Bind the socket
     if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
         perror("Bind failed");
         exit(EXIT_FAILURE);
     }
 
-    // Listen for incoming connections
+    //Listening for incoming connections
     if (listen(server_fd, 3) < 0) {
         perror("Listen failed");
         exit(EXIT_FAILURE);
@@ -46,14 +46,14 @@ int main() {
 
     printf("Server listening on port %d...\n", PORT);
 
-    // Accept a client connection
+    //Accept a client connection
     new_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
     if (new_socket < 0) {
         perror("Accept failed");
         exit(EXIT_FAILURE);
     }
 
-    // Create SSL context and load certificate/key
+    //Create SSL context and load self-signed certificate/key
     SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
     if (!SSL_CTX_use_certificate_file(ctx, "server.cert", SSL_FILETYPE_PEM) ||
         !SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM)) {
@@ -61,29 +61,29 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // Wrap accepted socket with SSL
+    //Wrap accepted socket with SSL
     SSL *ssl = SSL_new(ctx);
     SSL_set_fd(ssl, new_socket);
 
-    // Perform TLS handshake
+    //Performing TLS handshake
     if (SSL_accept(ssl) <= 0) {
         ERR_print_errors_fp(stderr);
     } else {
         printf("TLS handshake successful. Using %s\n", SSL_get_cipher(ssl));
 
-        // Ask for username
+        //The username input
         SSL_write(ssl, "Enter username:", strlen("Enter username:"));
         SSL_read(ssl, buffer, sizeof(buffer));
         char username[BUFFER_SIZE];
         strcpy(username, buffer);
 
-        // Ask for password
+        //The password input
         SSL_write(ssl, "Enter password:", strlen("Enter password:"));
         SSL_read(ssl, buffer, sizeof(buffer));
         char password[BUFFER_SIZE];
         strcpy(password, buffer);
 
-        // Check credentials against users.txt
+        //Checking for credentials against users.txt
         FILE *fp = fopen("users.txt", "r");
         int authenticated = 0;
         if (fp != NULL) {
@@ -97,7 +97,7 @@ int main() {
             fclose(fp);
         }
 
-        // Respond based on authentication status
+        //Response based on authentication status
         if (authenticated) {
             SSL_write(ssl, "Access granted", strlen("Access granted"));
         } else {
@@ -111,7 +111,7 @@ int main() {
         }
     }
 
-    // Cleanup
+    //The Cleanup to prevent leakage
     SSL_shutdown(ssl);
     SSL_free(ssl);
     SSL_CTX_free(ctx);
