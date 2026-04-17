@@ -14,7 +14,7 @@
 unsigned char key[16] = "threadslabAESkey";     //128-bit key
 unsigned char iv[16]  = "initialvector123";     //16-byte IV
 
-// Encrypt function (client to server)
+//Encrypt function (client to server)
 int encrypt(unsigned char *plaintext, int plaintext_len,
             unsigned char *ciphertext) {
     EVP_CIPHER_CTX *ctx;
@@ -39,27 +39,27 @@ int main() {
     SSL_CTX *ctx;
     SSL *ssl;
 
-    // Initialize OpenSSL
+    //Initialize OpenSSL
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
 
-    // Create SSL context
+    //Create the SSL context
     ctx = SSL_CTX_new(TLS_client_method());
 
-    // Create socket
+    //Create the socket
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         perror("Socket failed");
         exit(EXIT_FAILURE);
     }
 
-    // Define the server address
+    //Define the server address
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(PORT);
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    // Connect to the server
+    //Connect to the server
     if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Connect failed");
         exit(EXIT_FAILURE);
