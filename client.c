@@ -11,10 +11,10 @@
 #define BUFFER_SIZE 1024
 
 //AES key and IV (must match the server-side)
-unsigned char key[16] = "threadslabAESkey";   //128-bit key
-unsigned char iv[16]  = "initialvector123";   //16-byte IV
+unsigned char key[16] = "threadslabAESkey";     //128-bit key
+unsigned char iv[16]  = "initialvector123";     //16-byte IV
 
-//Encrypt function
+// Encrypt function (client to server)
 int encrypt(unsigned char *plaintext, int plaintext_len,
             unsigned char *ciphertext) {
     EVP_CIPHER_CTX *ctx;
@@ -33,118 +33,115 @@ int encrypt(unsigned char *plaintext, int plaintext_len,
     return ciphertext_len;
 }
 
-// Decrypt function
-int decrypt(unsigned char *ciphertext, int ciphertext_len,
-            unsigned char *plaintext) {
-    EVP_CIPHER_CTX *ctx;
-    int len, plaintext_len;
-
-    ctx = EVP_CIPHER_CTX_new();
-    EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, key, iv);
-
-    EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len);
-    plaintext_len = len;
-
-    EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
-    plaintext_len += len;
-
-    EVP_CIPHER_CTX_free(ctx);
-    return plaintext_len;
-}
-
 int main() {
     int sock;
-    struct sockaddr_in server_address;
-    char buffer[BUFFER_SIZE] = {0};
+    struct sockaddr_in server_addr;
+    SSL_CTX *ctx;
+    SSL *ssl;
 
-    //Initialize OpenSSL
+    // Initialize OpenSSL
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
 
-    //Create socket
+    // Create SSL context
+    ctx = SSL_CTX_new(TLS_client_method());
+
+    // Create socket
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         perror("Socket failed");
         exit(EXIT_FAILURE);
     }
 
-    //Define the server address
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(PORT);
-    server_address.sin_addr.s_addr = INADDR_ANY; //localhost
+    // Define the server address
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(PORT);
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    //Connect to the server
-    if (connect(sock, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
-        perror("Connection failed");
+    // Connect to the server
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connect failed");
         exit(EXIT_FAILURE);
     }
 
-    //Create SSL context and object
-    SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
-    SSL *ssl = SSL_new(ctx);
+    //Wrap the socket with SSL
+    ssl = SSL_new(ctx);
     SSL_set_fd(ssl, sock);
 
     //Performing the TLS handshake
     if (SSL_connect(ssl) <= 0) {
         ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
     } else {
-        printf("Connected with %s encryption\n", SSL_get_cipher(ssl));
+        printf("TLS handshake successful. Using %s\n", SSL_get_cipher(ssl));
+    }
 
-        //The username input
-        SSL_read(ssl, buffer, sizeof(buffer));
-        printf("Server: %s\n", buffer);
-        char username[BUFFER_SIZE];
-        printf("Enter username: ");
-        scanf("%s", username);
-        SSL_write(ssl, username, strlen(username));
+    char buffer[BUFFER_SIZE];
+    int bytes;
 
-        //The password input
-        SSL_read(ssl, buffer, sizeof(buffer));
-        printf("Server: %s\n", buffer);
-        char password[BUFFER_SIZE];
-        printf("Enter password: ");
-        scanf("%s", password);
-        SSL_write(ssl, password, strlen(password));
+    //The username input
+    bytes = SSL_read(ssl, buffer, sizeof(buffer));
+    buffer[bytes] = '\0';
+    printf("Server: %s\n", buffer);
 
-        //Read authentication result
-        SSL_read(ssl, buffer, sizeof(buffer));
-        printf("Server: %s\n", buffer);
+    printf("Enter username: ");
+    fgets(buffer, sizeof(buffer), stdin);
+    buffer[strcspn(buffer, "\n")] = '\0';
+    SSL_write(ssl, buffer, strlen(buffer));
 
-        //If access denied, exit immediately
-        if (strcmp(buffer, "Access denied") == 0) {
-            SSL_shutdown(ssl);
-            SSL_free(ssl);
-            SSL_CTX_free(ctx);
-            close(sock);
-            return 0;
-        }
+    //The password input
+    bytes = SSL_read(ssl, buffer, sizeof(buffer));
+    buffer[bytes] = '\0';
+    printf("Server: %s\n", buffer);
 
-        //Otherwise continue with the secure communication using AES
-        char msg[BUFFER_SIZE];
+    printf("Enter password: ");
+    fgets(buffer, sizeof(buffer), stdin);
+    buffer[strcspn(buffer, "\n")] = '\0';
+    SSL_write(ssl, buffer, strlen(buffer));
+
+    //The Access authentication result
+    bytes = SSL_read(ssl, buffer, sizeof(buffer));
+    buffer[bytes] = '\0';
+    printf("Server: %s\n", buffer);
+
+    //If access denied, exit immediately, Otherwise continue with the secure communication using AES
+    if (strcmp(buffer, "Access denied") == 0) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(sock);
+        SSL_CTX_free(ctx);
+        return 0;
+    }
+
+    //input the command or message to be sent to the server
+    while (1) {
         printf("Enter message to send: ");
-        scanf(" %[^\n]", msg); //allow spaces
+        fgets(buffer, sizeof(buffer), stdin);
+        buffer[strcspn(buffer, "\n")] = '\0';
 
-        unsigned char encrypted[BUFFER_SIZE];
-        int ciphertext_len = encrypt((unsigned char*)msg, strlen(msg), encrypted);
+        if (strcmp(buffer, "exit") == 0) break;
 
-        //Send encrypted message
-        SSL_write(ssl, encrypted, ciphertext_len);
+        //Encrypt message before sending
+        unsigned char ciphertext[BUFFER_SIZE];
+        int ciphertext_len = encrypt((unsigned char*)buffer, strlen(buffer), ciphertext);
 
-        //Receive the server's encrypted response
-         int bytes = SSL_read(ssl, buffer, sizeof(buffer));
-        if (bytes > 0) {
-            unsigned char decrypted_resp[BUFFER_SIZE];
-            int dec_len = decrypt((unsigned char*)buffer, bytes, decrypted_resp);
-            decrypted_resp[dec_len] = '\0';
-            printf("Server (encrypted): %s\n", decrypted_resp);
+        SSL_write(ssl, ciphertext, ciphertext_len);
+
+        //Receive server's response (plain text)
+        unsigned char reply[BUFFER_SIZE];
+        int reply_bytes = SSL_read(ssl, reply, sizeof(reply));
+        if (reply_bytes > 0) {
+            reply[reply_bytes] = '\0';
+            printf("Server reply: %s\n", reply);
         }
     }
-    //Cleanup
+
+    //Cleanup to prevent memory leaks
     SSL_shutdown(ssl);
     SSL_free(ssl);
-    SSL_CTX_free(ctx);
     close(sock);
+    SSL_CTX_free(ctx);
 
     return 0;
 }

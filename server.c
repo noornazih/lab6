@@ -11,12 +11,12 @@
 #define PORT 8080
 #define BUFFER_SIZE 1024
 
-//AES key and the IV (must match client)
-    unsigned char key[16] = "threadslabAESkey";   //128-bit key
-    unsigned char iv[16]  = "initialvector123";   //16-byte IV
+//AES key and IV (must match client)
+unsigned char key[16] = "threadslabAESkey";   //128-bit key
+unsigned char iv[16]  = "initialvector123";   //16-byte IV
 
-    //Setting up the extra AES key layer and encrypting
-    int encrypt(unsigned char *plaintext, int plaintext_len,
+//Setting up the extra AES key layer and encrypting
+int encrypt(unsigned char *plaintext, int plaintext_len,
             unsigned char *ciphertext) {
     EVP_CIPHER_CTX *ctx;
     int len, ciphertext_len;
@@ -34,7 +34,7 @@
     return ciphertext_len;
 }
 
-//Decrypt function
+//Decrypt function 
 int decrypt(unsigned char *ciphertext, int ciphertext_len,
             unsigned char *plaintext) {
     EVP_CIPHER_CTX *ctx;
@@ -53,31 +53,63 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len,
     return plaintext_len;
 }
 
+//Permission check function on what command permitted or denied
+int check_permission(const char *role, const char *cmd) {
+    if (strcmp(role, "Entry") == 0) {
+        if (strstr(cmd, "rm") != NULL ||
+            strncmp(cmd, "nano", 4) == 0 ||
+            strncmp(cmd, "vi", 2) == 0 ||
+            strncmp(cmd, "vim", 3) == 0 ||
+            strncmp(cmd, "touch", 5) == 0 ||
+            strncmp(cmd, "cp", 2) == 0 ||
+            strncmp(cmd, "mv", 2) == 0) {
+            return 0;
+        }
+        return 1;
+    }
+    else if (strcmp(role, "Medium") == 0) {
+        if (strstr(cmd, "rm") != NULL ||
+            strncmp(cmd, "unlink", 6) == 0 ||
+            strncmp(cmd, "rmdir", 5) == 0 ||
+            strncmp(cmd, "shred", 5) == 0 ||
+            strncmp(cmd, "wipe", 4) == 0) {
+            return 0;
+        }
+        return 1;
+    }
+    else if (strcmp(role, "Top") == 0) {
+        return 1;
+    }
+    return 0;
+}
+
 //The Thread function to handle each client
 void *the_clients(void *arg) {
     SSL *ssl = (SSL *)arg;
     char buffer[BUFFER_SIZE] = {0};
 
-    //The username input
+    //The Username Input
     SSL_write(ssl, "Enter username:", strlen("Enter username:"));
     SSL_read(ssl, buffer, sizeof(buffer));
     char username[BUFFER_SIZE];
     strcpy(username, buffer);
 
-    //The password input
+    //The Password Input
     SSL_write(ssl, "Enter password:", strlen("Enter password:"));
     SSL_read(ssl, buffer, sizeof(buffer));
     char password[BUFFER_SIZE];
     strcpy(password, buffer);
 
-    //Checking for credentials against users.txt
+    //Check for credentials againt users.txt
     FILE *fp = fopen("users.txt", "r");
     int authenticated = 0;
+    char user_role[BUFFER_SIZE] = {0};
     if (fp != NULL) {
-        char file_user[BUFFER_SIZE], file_pass[BUFFER_SIZE];
-        while (fscanf(fp, "%s %s", file_user, file_pass) != EOF) {
+        char file_user[BUFFER_SIZE], file_pass[BUFFER_SIZE], file_role[BUFFER_SIZE];
+        while (fscanf(fp, "%s %s %s", file_user, file_pass, file_role) != EOF) {
             if (strcmp(username, file_user) == 0 && strcmp(password, file_pass) == 0) {
                 authenticated = 1;
+                strcpy(user_role, file_role);
                 break;
             }
         }
@@ -95,24 +127,21 @@ void *the_clients(void *arg) {
     }
 
     //Secure communication between server-client
-    int bytes = SSL_read(ssl, buffer, sizeof(buffer));
-    if (bytes > 0) {
+    int bytes;
+    while ((bytes = SSL_read(ssl, buffer, sizeof(buffer))) > 0) {
         unsigned char decrypted[BUFFER_SIZE];
         int decrypted_len = decrypt((unsigned char*)buffer, bytes, decrypted);
         decrypted[decrypted_len] = '\0';
 
         printf("Client (decrypted): %s\n", decrypted);
-        SSL_write(ssl, "Secure message is received", strlen("Secure message is received"));
-
-        // Encrypt server response before sending
-        unsigned char response[] = "Secure message is received";
-        unsigned char encrypted_resp[BUFFER_SIZE];
-        int resp_len = encrypt(response, strlen((char*)response), encrypted_resp);
-
-        SSL_write(ssl, encrypted_resp, resp_len);
-
+        //permission check
+        if (check_permission(user_role, (char*)decrypted)) {
+            system((char*)decrypted);
+            SSL_write(ssl, "Command executed", strlen("Command executed"));
+        } else {
+            SSL_write(ssl, "Permission Denied", strlen("Permission Denied"));
+        }
     }
-
     //The Cleanup to prevent leakage
     SSL_shutdown(ssl);
     SSL_free(ssl);
@@ -123,7 +152,6 @@ int main() {
     int server_fd, new_socket;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
-    char buffer[BUFFER_SIZE] = {0};
 
     //Initialize OpenSSL
     SSL_library_init();
@@ -191,10 +219,9 @@ int main() {
         pthread_create(&thread, NULL, the_clients, ssl);
         pthread_detach(thread);
     }
-        
+
     //The Cleanup to prevent leakage
     SSL_CTX_free(ctx);
     close(server_fd);
-
     return 0;
 }
