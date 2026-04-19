@@ -53,7 +53,7 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len,
     return plaintext_len;
 }
 
-//Permission check function on what command permitted or denied
+//Permission check function on what command is permitted or denied
 int check_permission(const char *role, const char *cmd) {
     if (strcmp(role, "Entry") == 0) {
         if (strstr(cmd, "rm") != NULL ||
